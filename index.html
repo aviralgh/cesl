@@ -822,14 +822,8 @@
             <h2 class="form-title">🛒 Place Your Order</h2>
             <form id="orderForm">
                 <div class="form-group">
-                    <label for="order-product">Select Product</label>
-                    <select id="order-product" name="product" required>
-                        <option value="">Choose a packet size...</option>
-                        <option value="small" data-price="15">Small Packet - ₹15</option>
-                        <option value="medium" data-price="30">Medium Packet - ₹30</option>
-                        <option value="large" data-price="60">Large Packet - ₹60</option>
-                        <option value="xlarge" data-price="150">Extra Large Packet - ₹150</option>
-                    </select>
+                    <label for="order-product-name">Product</label>
+                    <input type="text" id="order-product-name" name="product_name" readonly>
                 </div>
                 
                 <div class="form-group">
@@ -848,13 +842,16 @@
                 </div>
 
                 <div class="form-group">
-                    <label for="order-phone">Phone Number</label>
-                    <input type="tel" id="order-phone" name="phone" required>
+                    <label for="order-address">Delivery Address</label>
+                    <textarea id="order-address" name="address" rows="3" required></textarea>
                 </div>
 
                 <div class="form-group">
-                    <label for="order-address">Delivery Address</label>
-                    <textarea id="order-address" name="address" rows="3" required></textarea>
+                    <label for="order-captcha-answer">Captcha: <span id="order-captcha-question"></span></label>
+                    <input type="text" id="order-captcha-answer" name="captcha_answer" placeholder="Enter answer" required>
+                    <button type="button" id="refresh-captcha" class="btn btn-secondary" style="margin-top: 0.8rem;">
+                        <span>New Captcha</span>
+                    </button>
                 </div>
 
                 <div class="order-total">
@@ -903,9 +900,24 @@
         // Wait for page to fully load
         document.addEventListener('DOMContentLoaded', function() {
             
-        // Initialize EmailJS with your Public Key
-        // IMPORTANT: Replace 'YOUR_PUBLIC_KEY' with your actual EmailJS public key
-        emailjs.init('YOUR_PUBLIC_KEY');
+        const EMAILJS_CONFIG = {
+            publicKey: 'ZgT9mN15m8XqAr5hr',
+            serviceId: 'service_5te73ep',
+            templateId: 'template_b6hj4xz'
+        };
+
+        const emailjsReady = Boolean(
+            window.emailjs &&
+            EMAILJS_CONFIG.publicKey &&
+            EMAILJS_CONFIG.serviceId &&
+            EMAILJS_CONFIG.templateId
+        );
+
+        if (emailjsReady) {
+            emailjs.init(EMAILJS_CONFIG.publicKey);
+        } else {
+            console.warn('EmailJS is not configured correctly.');
+        }
             
         // Smooth scrolling for navigation links
         document.querySelectorAll('a[href^="#"]').forEach(anchor => {
@@ -943,111 +955,190 @@
         const modal = document.getElementById('orderModal');
         const closeBtn = document.querySelector('.close-modal');
         const orderForm = document.getElementById('orderForm');
-        const productSelect = document.getElementById('order-product');
+        const orderButtons = document.querySelectorAll('.order-btn');
+        const productNameInput = document.getElementById('order-product-name');
         const quantityInput = document.getElementById('order-quantity');
         const totalAmount = document.getElementById('totalAmount');
+        const captchaQuestion = document.getElementById('order-captcha-question');
+        const captchaAnswer = document.getElementById('order-captcha-answer');
+        const refreshCaptchaBtn = document.getElementById('refresh-captcha');
+        const submitBtn = orderForm.querySelector('button[type="submit"]');
+        const submitBtnLabel = submitBtn.querySelector('span');
 
-        // Open modal when any Order Now button is clicked (Amazon-style)
-        const orderButtons = document.querySelectorAll('.order-btn');
-        console.log('Found order buttons:', orderButtons.length);
-        
+        const currentOrder = {
+            productName: '',
+            unitPrice: 0
+        };
+
+        let captchaExpected = 0;
+
+        function generateOrderId() {
+            return `CESL-${Date.now().toString(36).toUpperCase()}`;
+        }
+
+        function buildOrderTemplateParams(productName, units, unitPrice) {
+            const qty = Number(units) || 1;
+            const price = Number(unitPrice) || 0;
+            const subtotal = price * qty;
+            const shipping = 0;
+            const tax = 0;
+            const total = subtotal + shipping + tax;
+
+            return {
+                order_id: generateOrderId(),
+                to_email: 'sapcleaners5@gmail.com',
+                to: 'sapcleaners5@gmail.com',
+                recipient_email: 'sapcleaners5@gmail.com',
+                email: 'sapcleaners5@gmail.com',
+                user_email: 'sapcleaners5@gmail.com',
+                orders: [
+                    {
+                        name: productName,
+                        units: qty,
+                        price: subtotal.toFixed(2)
+                    }
+                ],
+                cost: {
+                    shipping: shipping.toFixed(2),
+                    tax: tax.toFixed(2),
+                    total: total.toFixed(2)
+                },
+                tracking_message: "We'll send you tracking information when the order ships."
+            };
+        }
+
+        function updateTotal() {
+            const quantity = Number(quantityInput.value) || 1;
+            const total = currentOrder.unitPrice * quantity;
+            totalAmount.textContent = total.toFixed(2);
+        }
+
+        function setCaptcha() {
+            const left = Math.floor(Math.random() * 9) + 1;
+            const right = Math.floor(Math.random() * 9) + 1;
+            captchaExpected = left + right;
+            captchaQuestion.textContent = `${left} + ${right} = ?`;
+            captchaAnswer.value = '';
+        }
+
+        function openOrderModal(button) {
+            const productCard = button.closest('.product-card');
+            const productName = productCard ? productCard.querySelector('h3').textContent.trim() : 'Product';
+            const unitPrice = Number(button.getAttribute('data-price')) || 0;
+
+            currentOrder.productName = productName;
+            currentOrder.unitPrice = unitPrice;
+            productNameInput.value = productName;
+            quantityInput.value = 1;
+            updateTotal();
+            setCaptcha();
+
+            modal.style.display = 'block';
+            document.body.style.overflow = 'hidden';
+        }
+
+        function closeOrderModal() {
+            modal.style.display = 'none';
+            document.body.style.overflow = 'auto';
+        }
+
         orderButtons.forEach(btn => {
             btn.addEventListener('click', function(e) {
                 e.preventDefault();
-                console.log('Order button clicked!');
-                const productType = this.getAttribute('data-product');
-                console.log('Product type:', productType);
-                
-                // Pre-select the product in the dropdown
-                productSelect.value = productType;
-                
-                // Reset quantity to 1
-                quantityInput.value = 1;
-                
-                // Update the total
-                updateTotal();
-                
-                // Open the modal
-                modal.style.display = 'block';
-                document.body.style.overflow = 'hidden';
+                if (!emailjsReady) {
+                    alert('Email service is not ready. Please try again later.');
+                    return;
+                }
+                openOrderModal(this);
             });
         });
 
-        // Close modal
-        closeBtn.addEventListener('click', function() {
-            modal.style.display = 'none';
-            document.body.style.overflow = 'auto';
-        });
+        quantityInput.addEventListener('input', updateTotal);
+        refreshCaptchaBtn.addEventListener('click', setCaptcha);
+        closeBtn.addEventListener('click', closeOrderModal);
 
-        // Close modal when clicking outside
         window.addEventListener('click', function(e) {
             if (e.target === modal) {
-                modal.style.display = 'none';
-                document.body.style.overflow = 'auto';
+                closeOrderModal();
             }
         });
 
-        // Calculate total amount
-        function updateTotal() {
-            const selectedOption = productSelect.options[productSelect.selectedIndex];
-            const price = selectedOption.getAttribute('data-price') || 0;
-            const quantity = quantityInput.value || 1;
-            const total = price * quantity;
-            totalAmount.textContent = total;
-        }
-
-        productSelect.addEventListener('change', updateTotal);
-        quantityInput.addEventListener('input', updateTotal);
-
-        // Order form submission with EmailJS
+        // Order form submission with captcha + confirmation
         orderForm.addEventListener('submit', function(e) {
             e.preventDefault();
-            
-            const formData = {
-                product: productSelect.options[productSelect.selectedIndex].text,
-                quantity: quantityInput.value,
-                name: document.getElementById('order-name').value,
-                email: document.getElementById('order-email').value,
-                phone: document.getElementById('order-phone').value,
-                address: document.getElementById('order-address').value,
-                total: totalAmount.textContent
-            };
+            if (!emailjsReady) {
+                alert('Email service is not ready. Please try again later.');
+                return;
+            }
 
-            // Prepare email template parameters
-            const templateParams = {
-                to_email: 'sapcleaners5@gmail.com',
-                customer_name: formData.name,
-                customer_email: formData.email,
-                customer_phone: formData.phone,
-                product: formData.product,
-                quantity: formData.quantity,
-                total_amount: '₹' + formData.total,
-                delivery_address: formData.address,
-                order_date: new Date().toLocaleString()
-            };
+            const quantity = Number(quantityInput.value) || 1;
+            const captchaValue = Number(captchaAnswer.value);
+            if (captchaValue !== captchaExpected) {
+                alert('Captcha is incorrect. Please try again.');
+                setCaptcha();
+                return;
+            }
 
-            // Send email using EmailJS
-            // IMPORTANT: Replace 'YOUR_SERVICE_ID' and 'YOUR_TEMPLATE_ID' with your actual EmailJS IDs
-            emailjs.send('YOUR_SERVICE_ID', 'YOUR_TEMPLATE_ID', templateParams)
-                .then(function(response) {
-                    console.log('Email sent successfully!', response.status, response.text);
-                    alert(`Thank you for your order! 🌱\n\nOrder Summary:\n${formData.product}\nQuantity: ${formData.quantity}\nTotal: ₹${formData.total}\n\nWe will contact you at ${formData.phone} to confirm your delivery.\n\nA confirmation email has been sent to ${formData.email}\n\nYour contribution helps us save the Earth! 🌍💚`);
-                    
+            const customerName = document.getElementById('order-name').value.trim();
+            const customerEmail = document.getElementById('order-email').value.trim();
+            const customerAddress = document.getElementById('order-address').value.trim();
+            const totalValue = (currentOrder.unitPrice * quantity).toFixed(2);
+
+            const confirmed = window.confirm(
+                `Confirm order?\n\nProduct: ${currentOrder.productName}\nQuantity: ${quantity}\nTotal: ₹${totalValue}`
+            );
+            if (!confirmed) {
+                return;
+            }
+
+            const templateParams = buildOrderTemplateParams(
+                currentOrder.productName,
+                quantity,
+                currentOrder.unitPrice
+            );
+
+            templateParams.customer_name = customerName;
+            templateParams.customer_email = customerEmail;
+            templateParams.reply_to = customerEmail;
+            templateParams.from_name = customerName;
+            templateParams.from_email = customerEmail;
+            templateParams.delivery_address = customerAddress;
+            templateParams.order_date = new Date().toLocaleString();
+
+            submitBtn.disabled = true;
+            submitBtnLabel.textContent = 'Sending...';
+
+            emailjs.send(EMAILJS_CONFIG.serviceId, EMAILJS_CONFIG.templateId, templateParams)
+                .then(function() {
+                    alert(
+                        `Order placed successfully!\n\nOrder # ${templateParams.order_id}\n` +
+                        `${currentOrder.productName}\nQTY: ${quantity}\n₹${totalValue}\n\n` +
+                        `We'll send you tracking information when the order ships.`
+                    );
                     orderForm.reset();
-                    modal.style.display = 'none';
-                    document.body.style.overflow = 'auto';
-                    updateTotal();
-                }, function(error) {
-                    console.error('Email failed to send:', error);
-                    alert('Order received! However, there was an issue sending the confirmation email. We will contact you soon at ' + formData.phone + '. 🌱');
-                    
-                    orderForm.reset();
-                    modal.style.display = 'none';
-                    document.body.style.overflow = 'auto';
+                    closeOrderModal();
+                })
+                .catch(function(error) {
+                    console.error('Failed to place order:', error);
+                    alert('Could not place your order right now. Please try again.');
+                })
+                .finally(function() {
+                    submitBtn.disabled = false;
+                    submitBtnLabel.textContent = 'Confirm Order';
+                    setCaptcha();
                     updateTotal();
                 });
         });
 
         // Contact and complaint form submission handling
         document.querySelectorAll('form:not(#orderForm)').forEach(form => {
-            form.addEventListener('submit', function(e)
+            form.addEventListener('submit', function(e) {
+                e.preventDefault();
+                alert('Thank you! We have received your message and will contact you soon.');
+                this.reset();
+            });
+        });
+        });
+    </script>
+</body>
+</html>
